@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0D0A0A">
+<title>Ghost Plugin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent; }
+
+:root {
+  --red:       #FF3B3B;
+  --red-deep:  #C0000A;
+  --red-glow:  rgba(255,59,59,.35);
+  --red-dim:   rgba(255,59,59,.12);
+  --bg:        #0D0A0A;
+  --bg2:       #130D0D;
+  --surface:   #1A1010;
+  --surface2:  #221414;
+  --fg:        #F5EDED;
+  --fg2:       #C9BABA;
+  --muted:     #7A6060;
+  --border:    rgba(255,59,59,.18);
+  --green:     #3DDB82;
+  --green-dim: rgba(61,219,130,.12);
+}
+
+html { background:var(--bg); }
+html,body {
+  height:100%;width:100%;overflow:hidden;
+  font-family:'Syne',system-ui,sans-serif;
+  background:var(--bg);color:var(--fg);
+  -webkit-font-smoothing:antialiased;
+  touch-action:manipulation;
+  overscroll-behavior:none;
+}
+
+/* ── FUNDO GRADIENTE ANIMADO ── */
+@property --gx1 { syntax:'<percentage>'; inherits:false; initial-value:50%; }
+@property --gy1 { syntax:'<percentage>'; inherits:false; initial-value:-10%; }
+@property --gx2 { syntax:'<percentage>'; inherits:false; initial-value:100%; }
+@property --gy2 { syntax:'<percentage>'; inherits:false; initial-value:100%; }
+
+body::before {
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 80% 50% at var(--gx1) var(--gy1), rgba(192,0,10,.28) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at var(--gx2) var(--gy2), rgba(255,59,59,.1) 0%, transparent 60%);
+  animation: gradMove1 8s ease-in-out infinite alternate,
+             gradMove2 11s ease-in-out infinite alternate-reverse;
+}
+@keyframes gradMove1 {
+  0%   { --gx1:50%;  --gy1:-10%; }
+  33%  { --gx1:70%;  --gy1:5%;   }
+  66%  { --gx1:30%;  --gy1:-5%;  }
+  100% { --gx1:55%;  --gy1:10%;  }
+}
+@keyframes gradMove2 {
+  0%   { --gx2:100%; --gy2:100%; }
+  33%  { --gx2:80%;  --gy2:85%;  }
+  66%  { --gx2:110%; --gy2:70%;  }
+  100% { --gx2:90%;  --gy2:100%; }
+}
+
+/* ── TELA ── */
+.screen, .status-screen {
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:32px 24px;gap:0;
+  z-index:1;
+}
+.status-screen { gap:14px; }
+
+/* ── LOGO ── */
+.logo-wrap { display:flex;flex-direction:column;align-items:center;margin-bottom:36px; }
+.logo-icon {
+  width:64px;height:64px;border-radius:20px;
+  background:linear-gradient(135deg, #FF3B3B 0%, #8B0000 100%);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 32px rgba(255,59,59,.4), 0 8px 24px rgba(0,0,0,.5);
+  margin-bottom:14px;
+  position:relative;overflow:hidden;
+}
+.logo-icon::after {
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.15) 0%,transparent 60%);
+}
+.logo-icon svg { width:30px;height:30px;fill:#fff;position:relative;z-index:1; }
+.logo { font-size:22px;font-weight:800;color:var(--fg);letter-spacing:-.5px; }
+.logo span { color:var(--red); }
+.logo-sub { font-size:12px;color:var(--muted);margin-top:2px;letter-spacing:.5px;text-transform:uppercase; }
+
+/* ── CARD ── */
+.card {
+  width:100%;max-width:340px;
+  background:rgba(26,16,16,.85);
+  border:1px solid var(--border);
+  border-radius:24px;overflow:hidden;
+  box-shadow:0 8px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(255,59,59,.08);
+  backdrop-filter:blur(12px);
+}
+.card-pad { padding:24px;display:flex;flex-direction:column;gap:14px; }
+
+/* linha decorativa no topo do card */
+.card::before {
+  content:'';display:block;height:2px;
+  background:linear-gradient(90deg, transparent, var(--red), transparent);
+}
+
+/* ── FIELD ── */
+.field { display:flex;flex-direction:column;gap:6px; }
+.field-lbl { font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.8px; }
+.field-inp {
+  background:rgba(255,255,255,.04);
+  border:1.5px solid rgba(255,59,59,.2);
+  border-radius:12px;padding:12px 16px;font-size:14px;color:var(--fg);
+  transition:.2s;width:100%;font-family:inherit;
+}
+.field-inp:focus { outline:none;border-color:var(--red);background:rgba(255,59,59,.06);box-shadow:0 0 0 3px rgba(255,59,59,.1); }
+.field-inp::placeholder { color:var(--muted); }
+
+.err { font-size:12px;color:#FF6B6B;min-height:16px; }
+
+/* ── BTN ── */
+.btn {
+  width:100%;padding:14px;border-radius:12px;font-size:14px;font-weight:700;
+  color:#fff;border:none;cursor:pointer;
+  font-family:inherit;letter-spacing:.3px;
+  background:linear-gradient(135deg, var(--red) 0%, var(--red-deep) 100%);
+  box-shadow:0 0 28px rgba(255,59,59,.25);
+  transition:transform .15s, box-shadow .15s;
+  position:relative;overflow:hidden;
+}
+.btn:active { transform:scale(.97);box-shadow:0 0 12px rgba(255,59,59,.15); }
+.btn.secondary {
+  background:rgba(255,255,255,.05);color:var(--fg2);
+  border:1.5px solid rgba(255,255,255,.1);
+  box-shadow:none;
+}
+.btn.secondary::after { display:none; }
+
+/* ── STATUS ICON ── */
+.status-icon {
+  width:80px;height:80px;border-radius:28px;
+  background:var(--red-dim);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:4px;
+  box-shadow:0 0 24px rgba(255,59,59,.2);
+}
+.status-icon svg { width:36px;height:36px;fill:var(--red); }
+.status-icon.ok { background:var(--green-dim);border-color:rgba(61,219,130,.25);box-shadow:0 0 24px rgba(61,219,130,.15); }
+.status-icon.ok svg { fill:var(--green); }
+.status-title { font-size:20px;font-weight:700;color:var(--fg);text-align:center; }
+.status-sub { font-size:14px;color:var(--muted);text-align:center;line-height:1.6;max-width:280px; }
+
+/* ── PREFS ── */
+.prefs-card {
+  width:100%;max-width:340px;
+  background:rgba(26,16,16,.85);
+  border:1px solid var(--border);
+  border-radius:20px;overflow:hidden;
+  backdrop-filter:blur(12px);
+}
+.prefs-card::before {
+  content:'';display:block;height:2px;
+  background:linear-gradient(90deg,transparent,var(--red),transparent);
+}
+.pref-item {
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+  border-bottom:1px solid rgba(255,59,59,.1);
+}
+.pref-item:last-child { border-bottom:none; }
+.pref-ico {
+  width:38px;height:38px;border-radius:12px;background:var(--red-dim);
+  border:1px solid rgba(255,59,59,.2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.pref-ico svg { width:17px;height:17px;fill:var(--red); }
+.pref-ico.green { background:var(--green-dim);border-color:rgba(61,219,130,.25); }
+.pref-ico.green svg { fill:var(--green); }
+.pref-ico.yellow { background:rgba(255,183,77,.1);border-color:rgba(255,183,77,.25); }
+.pref-ico.yellow svg { fill:#FFB74D; }
+.pref-body { flex:1; }
+.pref-label { font-size:14px;font-weight:600;color:var(--fg); }
+.pref-sub { font-size:11px;color:var(--muted);margin-top:2px; }
+
+/* Toggle vermelho */
+.m3-toggle { position:relative;width:48px;height:28px;flex-shrink:0; }
+.m3-toggle input { opacity:0;width:0;height:0;position:absolute; }
+.m3-track {
+  position:absolute;inset:0;border-radius:14px;
+  background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.12);
+  transition:.2s;cursor:pointer;
+}
+.m3-toggle input:checked + .m3-track { background:var(--red);border-color:var(--red);box-shadow:0 0 8px rgba(255,59,59,.4); }
+.m3-thumb {
+  position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:rgba(255,255,255,.4);transition:.2s;pointer-events:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.4);
+}
+.m3-toggle input:checked ~ .m3-thumb { left:23px;background:#fff; }
+
+/* ── NOTIF BADGE ── */
+.notif-badge {
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--red-dim);border:1px solid rgba(255,59,59,.25);
+  border-radius:99px;padding:6px 14px;
+  font-size:11px;font-weight:700;color:var(--red);
+  letter-spacing:.3px;text-transform:uppercase;
+}
+.notif-badge.active {
+  background:var(--green-dim);border-color:rgba(61,219,130,.3);color:var(--green);
+}
+.notif-badge svg { width:11px;height:11px;fill:currentColor; }
+
+/* ── ADMIN INFO ── */
+.admin-info {
+  display:flex;align-items:center;gap:12px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,59,59,.15);
+  border-radius:16px;padding:12px 16px;
+  width:100%;max-width:340px;
+}
+.admin-av {
+  width:42px;height:42px;border-radius:12px;
+  background:linear-gradient(135deg,var(--red),var(--red-deep));
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:800;color:#fff;flex-shrink:0;overflow:hidden;
+  box-shadow:0 4px 12px rgba(255,59,59,.3);
+}
+.admin-av img { width:100%;height:100%;object-fit:cover; }
+.admin-name { font-size:14px;font-weight:700;color:var(--fg); }
+.admin-user { font-size:11px;color:var(--muted);margin-top:1px; }
+.logout-btn {
+  margin-left:auto;padding:6px 14px;border-radius:99px;
+  background:transparent;border:1.5px solid rgba(255,59,59,.25);
+  font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;
+  font-family:inherit;letter-spacing:.3px;text-transform:uppercase;
+  transition:.15s;
+}
+.logout-btn:active { background:var(--red-dim);color:var(--red); }
+
+/* ── LOADING ── */
+.spinner {
+  width:44px;height:44px;
+  border:3px solid rgba(255,59,59,.15);
+  border-top-color:var(--red);
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+  box-shadow:0 0 16px rgba(255,59,59,.2);
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.hidden { display:none !important; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="screen" id="s-login">
+  <div class="logo-wrap">
+    <div class="logo">Ghost <span>Plugin</span></div>
+  </div>
+  <div class="card">
+    <div class="card-pad">
+      <div class="field">
+        <div class="field-lbl">Usuário</div>
+        <input class="field-inp" id="inp-user" type="text" placeholder="nome de usuário" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <div class="field-lbl">Senha</div>
+        <input class="field-inp" id="inp-pw" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')tryLogin()">
+      </div>
+      <div class="err" id="login-err"></div>
+      <button class="btn" onclick="tryLogin()"><span>Entrar</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div class="status-screen hidden" id="s-loading">
+  <div class="spinner"></div>
+  <div class="status-sub" style="margin-top:16px">Conectando…</div>
+</div>
+
+<!-- PEDINDO PERMISSÃO -->
+<div class="status-screen hidden" id="s-perm">
+  <div class="status-icon">
+    <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+  </div>
+  <div class="status-title">Ativar notificações</div>
+  <div class="status-sub">Precisamos da sua permissão para enviar alertas quando chegarem mensagens novas.</div>
+  <button class="btn" style="max-width:280px;margin-top:8px" onclick="requestPerm()"><span>Permitir notificações</span></button>
+  <button class="btn secondary" style="max-width:280px;margin-top:8px" onclick="skipToMain()">Agora não</button>
+</div>
+
+<!-- PRINCIPAL -->
+<div class="status-screen hidden" id="s-main">
+  <!-- Admin info -->
+  <div class="admin-info" id="admin-info">
+    <div class="admin-av" id="main-av">?</div>
+    <div>
+      <div class="admin-name" id="main-name">—</div>
+      <div class="admin-user" id="main-user">—</div>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">Sair</button>
+  </div>
+
+  <!-- Badge de status -->
+  <div id="notif-badge" class="notif-badge" style="margin-top:12px">
+    <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+    <span id="notif-badge-txt">Notificações inativas</span>
+  </div>
+
+  <!-- Preferências -->
+  <div class="prefs-card" style="margin-top:20px">
+    <div class="pref-item">
+      <div class="pref-ico">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      </div>
+      <div class="pref-body">
+        <div class="pref-label">Mensagens</div>
+        <div class="pref-sub">Nova mensagem de usuário</div>
+      </div>
+      <label class="m3-toggle">
+        <input type="checkbox" id="pref-msg" checked onchange="savePref('msg',this.checked)">
+        <div class="m3-track"></div><div class="m3-thumb"></div>
+      </label>
+    </div>
+    <div class="pref-item">
+      <div class="pref-ico green">
+        <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+      </div>
+      <div class="pref-body">
+        <div class="pref-label">Vendas</div>
+        <div class="pref-sub">Compra aprovada</div>
+      </div>
+      <label class="m3-toggle">
+        <input type="checkbox" id="pref-sale" onchange="savePref('sale',this.checked)">
+        <div class="m3-track"></div><div class="m3-thumb"></div>
+      </label>
+    </div>
+    <div class="pref-item">
+      <div class="pref-ico yellow">
+        <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      </div>
+      <div class="pref-body">
+        <div class="pref-label">Novos usuários</div>
+        <div class="pref-sub">Cadastro de novo usuário</div>
+      </div>
+      <label class="m3-toggle">
+        <input type="checkbox" id="pref-user" onchange="savePref('user',this.checked)">
+        <div class="m3-track"></div><div class="m3-thumb"></div>
+      </label>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:#938F99;margin-top:20px;text-align:center">
+    Mantenha este app aberto em segundo plano
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──
+const SUPA_URL = 'https://wpdjetsomlvmlnkpkwja.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwZGpldHNvbWx2bWxua3Brd2phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NTc3MTIsImV4cCI6MjA5MDMzMzcxMn0.Ggboop89c8yb8pSjIqBtFnUgjpf6jPT988qcAE8bBVA';
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCoUnTHiOudFprhSmM48PcRVQvAUn-ODWY",
+  authDomain: "ghost-admin-97a8a.firebaseapp.com",
+  projectId: "ghost-admin-97a8a",
+  storageBucket: "ghost-admin-97a8a.firebasestorage.app",
+  messagingSenderId: "797267036010",
+  appId: "1:797267036010:web:79b7b3caa45ab402aac713",
+};
+const VAPID_KEY = 'BADRSVqbAST244G7eGkn95fhZVa9joGIPuxaMNgh3OCc3LIhdg9pKzLqdzO9GkVL7P9Ctr3BxcwOXPRcHfKxlUc';
+const VALID_PASSWORDS = ['repp14ff@','Macapa123gg','teste','Teste'];
+
+const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+const LS = {
+  get:k=>{try{return JSON.parse(localStorage.getItem(k))}catch{return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}},
+  del:k=>{try{localStorage.removeItem(k)}catch{}}
+};
+
+let currentAdmin = null;
+let _realtimeChannel = null;
+
+// ── TELAS ──
+function show(id) {
+  ['s-login','s-loading','s-perm','s-main'].forEach(s => {
+    document.getElementById(s).classList.toggle('hidden', s !== id);
+  });
+}
+
+// ── LOGIN ──
+async function tryLogin() {
+  const user = document.getElementById('inp-user').value.trim();
+  const pw = document.getElementById('inp-pw').value;
+  const err = document.getElementById('login-err');
+  err.textContent = '';
+  if (!user || !pw) { err.textContent = 'Preencha todos os campos.'; return; }
+  if (!VALID_PASSWORDS.includes(pw)) { err.textContent = 'Senha incorreta.'; return; }
+  show('s-loading');
+  const {data, error} = await db.from('admins').select('*').eq('username', user).eq('password_hash', pw).single();
+  if (error || !data) { show('s-login'); err.textContent = 'Usuário ou senha incorretos.'; return; }
+  currentAdmin = data;
+  LS.set('ghost_plugin_sess', {id: data.id, username: data.username});
+  afterLogin();
+}
+
+async function afterLogin() {
+  applyAdminUI();
+  loadPrefs();
+  if (Notification.permission === 'granted') {
+    await initNotifications();
+    show('s-main');
+    startRealtime();
+  } else if (Notification.permission === 'denied') {
+    show('s-main');
+    startRealtime();
+  } else {
+    show('s-perm');
+  }
+}
+
+function applyAdminUI() {
+  const a = currentAdmin;
+  const letter = (a.display_name || a.username || '?')[0].toUpperCase();
+  const av = document.getElementById('main-av');
+  av.innerHTML = a.avatar_url ? `<img src="${a.avatar_url}" onerror="this.style.display='none'">` : letter;
+  document.getElementById('main-name').textContent = a.display_name || a.username;
+  document.getElementById('main-user').textContent = '@' + a.username;
+}
+
+// ── PERMISSÃO ──
+async function requestPerm() {
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    await initNotifications();
+  }
+  show('s-main');
+  startRealtime();
+  updateBadgeUI();
+}
+
+function skipToMain() {
+  show('s-main');
+  startRealtime();
+  updateBadgeUI();
+}
+
+// ── FCM ──
+async function initNotifications() {
+  try {
+    if (!firebase.messaging.isSupported()) return;
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    const messaging = firebase.messaging();
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+      await navigator.serviceWorker.ready;
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+      if (token && currentAdmin) {
+        await db.from('fcm_tokens').upsert(
+          { token, admin_id: currentAdmin.id, updated_at: new Date().toISOString() },
+          { onConflict: 'token' }
+        );
+      }
+      // Foreground
+      messaging.onMessage(payload => {
+        const prefs = getPrefs();
+        const type = payload.data?.type || 'msg';
+        if (!prefs[type]) return;
+        const title = payload.notification?.title || 'Ghost Admin';
+        const body = payload.notification?.body || '';
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body, icon: 'app_icon.png', tag: 'ghost-plugin-' + type });
+        }
+      });
+    }
+    updateBadgeUI();
+  } catch(e) { console.log('FCM erro:', e.message); }
+}
+
+// ── REALTIME — escuta novos eventos e dispara notificação nativa ──
+function startRealtime() {
+  if (_realtimeChannel) db.removeChannel(_realtimeChannel);
+  _realtimeChannel = db.channel('ghost-plugin-' + currentAdmin.id)
+
+    // Nova mensagem de usuário
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'chats'}, async payload => {
+      const msg = payload.new;
+      if (msg.role !== 'user') return;
+      const prefs = getPrefs();
+      if (!prefs.msg) return;
+      const {data:u} = await db.from('users').select('nome').eq('email', msg.user_key).single();
+      const name = u?.nome || msg.user_key;
+      fireNotif('💬 ' + name, (msg.message || '').slice(0, 80));
+    })
+
+    // Nova venda (inserção em orders/purchases — adapte o nome da tabela se necessário)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'orders'}, payload => {
+      const prefs = getPrefs();
+      if (!prefs.sale) return;
+      fireNotif('💰 Nova venda!', 'Uma compra foi aprovada.');
+    })
+
+    // Novo usuário
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'users'}, payload => {
+      const prefs = getPrefs();
+      if (!prefs.user) return;
+      const u = payload.new;
+      fireNotif('👤 Novo usuário', (u.nome || u.email || 'Alguém') + ' se cadastrou.');
+    })
+
+    .subscribe();
+}
+
+// ── NOTIFICAÇÃO NATIVA ──
+function fireNotif(title, body) {
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, {
+      body,
+      icon: 'app_icon.png',
+      badge: 'app_icon.png',
+      tag: 'ghost-plugin',
+      renotify: true,
+    });
+  } catch(e) {}
+}
+
+// ── PREFS ──
+function getPrefs() {
+  return LS.get('ghost_plugin_prefs') || { msg:true, sale:false, user:false };
+}
+function savePref(key, val) {
+  const p = getPrefs(); p[key] = val;
+  LS.set('ghost_plugin_prefs', p);
+}
+function loadPrefs() {
+  const p = getPrefs();
+  document.getElementById('pref-msg').checked = p.msg !== false;
+  document.getElementById('pref-sale').checked = !!p.sale;
+  document.getElementById('pref-user').checked = !!p.user;
+}
+function updateBadgeUI() {
+  const badge = document.getElementById('notif-badge');
+  const txt = document.getElementById('notif-badge-txt');
+  const granted = Notification.permission === 'granted';
+  badge.className = 'notif-badge' + (granted ? ' active' : '');
+  txt.textContent = granted ? 'Notificações ativas ✓' : 'Notificações inativas';
+}
+
+// ── LOGOUT ──
+function doLogout() {
+  if (_realtimeChannel) db.removeChannel(_realtimeChannel);
+  currentAdmin = null;
+  LS.del('ghost_plugin_sess');
+  document.getElementById('inp-user').value = '';
+  document.getElementById('inp-pw').value = '';
+  show('s-login');
+}
+
+// ── INIT ──
+(async function() {
+  const sess = LS.get('ghost_plugin_sess');
+  if (sess?.id) {
+    show('s-loading');
+    const {data} = await db.from('admins').select('*').eq('id', sess.id).single();
+    if (data) { currentAdmin = data; afterLogin(); return; }
+  }
+  show('s-login');
+})();
+</script>
+</body>
+</html>
